@@ -1,82 +1,72 @@
-# Vader Sentiment analysis
+""" This script performs Vader Sentiment Analysis on the full dataset of commencement
+speeches and then consolidates results for male and female speeches.
 
-# Full speech analysis
-# create a copy in case of needing to revert to previous state
-sent_df = categorized_speeches.copy()
+Dataframes that are created in this script are exported for Tableau visualization. They include:
+* overall_sentiment_analysis.csv
+* mean_sentiment_per_gender.csv
+"""
+import pandas as pd
+import numpy as np
 
-analyser = SentimentIntensityAnalyzer()
+from sklearn.feature_extraction.text import  CountVectorizer
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+from topic_modeling import new_stopwords
 
-# for each of the speeches, create columns for the four sentiments captured by Vader to analyze
-sent_df['pos'] = sent_df.speech.apply(lambda x: analyser.polarity_scores(x)['pos'])
-sent_df['neg'] = sent_df.speech.apply(lambda x: analyser.polarity_scores(x)['neg'])
-sent_df['neu'] = sent_df.speech.apply(lambda x: analyser.polarity_scores(x)['neu'])
-sent_df['comp'] = sent_df.speech.apply(lambda x: analyser.polarity_scores(x)['compound'])
+def split_speeches(data):
+    """Returns the dataframe with ten new columns, each including a 10th of the origonal
+    speech. This enables comparison of sentiment throughout the speech.
+    """
+    for n in range(10):
+        data[f's{n}'] = data.speech.str.split().apply(lambda x: ' '.join(x[n*int(len(x)/10):
+                                                                           (n+1)*int(len(x)/10)]))
 
-# view and compare results for each gender
-sent_df.groupby('gender')['pos','neg','neu','compount'].agg(['mean'])
-
-# By Section
-# create a copy in case of needing to revert to previous state. Maintain only gender and speech
-# columns to avoid clutter
-sent_df_split = categorized_speeches[['gender','speech']]
-
-# split speeches into 10 sections, each is a new column to keep the speech together
-sent_df_split['s1'] = sent_df_split.speech.str.split().apply(lambda x: ' '.join(x[0:int(len(x)/10)]))
-sent_df_split['s2'] = sent_df_split.speech.str.split().apply(lambda x: ' '.join(x[int(len(x)/10):2*int(len(x)/10)]))
-sent_df_split['s3'] = sent_df_split.speech.str.split().apply(lambda x: ' '.join(x[2*int(len(x)/10):3*int(len(x)/10)]))
-sent_df_split['s4'] = sent_df_split.speech.str.split().apply(lambda x: ' '.join(x[3*int(len(x)/10):4*int(len(x)/10)]))
-sent_df_split['s5'] = sent_df_split.speech.str.split().apply(lambda x: ' '.join(x[4*int(len(x)/10):5*int(len(x)/10)]))
-sent_df_split['s6'] = sent_df_split.speech.str.split().apply(lambda x: ' '.join(x[5*int(len(x)/10):6*int(len(x)/10)]))
-sent_df_split['s7'] = sent_df_split.speech.str.split().apply(lambda x: ' '.join(x[6*int(len(x)/10):7*int(len(x)/10)]))
-sent_df_split['s8'] = sent_df_split.speech.str.split().apply(lambda x: ' '.join(x[7*int(len(x)/10):8*int(len(x)/10)]))
-sent_df_split['s9'] = sent_df_split.speech.str.split().apply(lambda x: ' '.join(x[8*int(len(x)/10):9*int(len(x)/10)]))
-sent_df_split['s10'] = sent_df_split.speech.str.split().apply(lambda x: ' '.join(x[9*int(len(x)/10):10*int(len(x)/10)]))
-
-def obtain_comp_score(data, col):
-    """Takes in a dataframe and column and return the compound sentiment score for the text
-    in that column. Used to obtain sentiment scores for the 10 smaller sections of the
-    commencement speecches."""
-
-    new_col_name = 'comp' + col
-    data[new_col_name] = data[col].apply(lambda x: analyser.polarity_scores(x)['compound'])
     return data
 
-sent_df_split = obtain_comp_score(sent_df_split, 's1')
-sent_df_split = obtain_comp_score(sent_df_split, 's2')
-sent_df_split = obtain_comp_score(sent_df_split, 's3')
-sent_df_split = obtain_comp_score(sent_df_split, 's4')
-sent_df_split = obtain_comp_score(sent_df_split, 's5')
-sent_df_split = obtain_comp_score(sent_df_split, 's6')
-sent_df_split = obtain_comp_score(sent_df_split, 's7')
-sent_df_split = obtain_comp_score(sent_df_split, 's8')
-sent_df_split = obtain_comp_score(sent_df_split, 's9')
-sent_df_split = obtain_comp_score(sent_df_split, 's10')
+def obtain_comp_score(data_with_splits):
+    """Returns the dataframe with a new column indicating the sentiment analysis score for
+    each section of the speech. For example, section 0 of the speech will have an output
+    column 'comp0' that indicates the compilation sentiment score of seciton 0.
+    """
+    analyser = SentimentIntensityAnalyzer()
 
-# view the average sentiment for each section of the speeches by gender
-sent_by_gender = sent_df_split.groupby('gender')['comps1',
-                                                'comps2',
-                                                'comps3',
-                                                'comps4',
-                                                'comps5',
-                                                'comps6',
-                                                'comps7',
-                                                'comps8',
-                                                'comps9',
-                                                'comps10'].agg(['mean'])
+    for n in range(10):
+        col = 's' + n
+        new_col = 'comp' + col
+        data_with_splits[new_col] = data_with_splits[col].apply(lambda x:
+                                                                analyser.polarity_scores(x)
+                                                                ['compound'])
 
-# create a dataframe of mean sentiment by gender to export for Tableau visualization
-sent_each = pd.DataFrame({'f':list(sent_by_gender.iloc[0,:].values) ,
-                          'm': list(sent_by_gender.iloc[1,:].values)})
+    data_with_splits.to_csv('overall_sentiment_analysis.csv')
 
-# export for vis
-sent_each.to_csv('mean_sentiment_per_gender.csv')
+    return data_with_splits
 
-# view the overall top words per section to have an idea of where sentiment change is derived from
+def sentiment_by_gender(sentiment_data):
+    """Prints the mean sentiment score by gender for each section of the speeches.
+    Creates a dataframe of speech sentiment by gender and exports to csv to be used
+    for Tableau visualization.
+    """
+    # view the average sentiment for each section of the speeches by gender
+    sent_by_gender = sentiment_data.groupby('gender')['comps1', 'comps2', 'comps3',
+                                                      'comps4', 'comps5', 'comps6',
+                                                      'comps7', 'comps8', 'comps9',
+                                                      'comps10'].agg(['mean'])
+    print('Sentiment score by gender:', sent_by_gender)
 
-def top_words_by_section(data, section):
-    """Takes in a dataframe and a section and returns the most commonly used words within
-    that section."""
-    cv = CountVectorizer(stop_words=create_stopwords(), ngram_range=(1,1))
+    # create a dataframe of mean sentiment by gender to export for Tableau visualization
+    sent_each = pd.DataFrame({'f':list(sent_by_gender.iloc[0, :].values),
+                              'm': list(sent_by_gender.iloc[1, :].values)})
+    sent_each.to_csv('mean_sentiment_per_gender.csv')
+
+
+def top_words_single_section(data, section):
+    """Returns the most commonly used words in a given section of a dataframe.
+
+    Args:
+    data -- a dataframe with sentiment analysis performed
+    section -- the speech section to provide a list of top words for
+    """
+
+    cv = CountVectorizer(stop_words=new_stopwords(), ngram_range=(1, 1))
     data_cv = cv.fit_transform(data[section])
 
     data_dtm = pd.DataFrame(data_cv.toarray(), columns=cv.get_feature_names())
@@ -86,108 +76,24 @@ def top_words_by_section(data, section):
 
     return top_words_ls
 
-# view top words in section 1
-print("Top words in section 1:'\n'", top_words_by_section(sent_df_split, 's1')[:20], '\n')
+def top_words_all_sections(data):
+    """Prints a list of the most commonly used words in each of the ten
+    sections of the speech.
+    """
 
-# view top words in a middle section
-print("Top words in section 5:'\n'", top_words_by_section(sent_df_split, 's5')[:20], '\n')
+    for n in range(10):
+        print(f"Top words in section {n}:")
+        print(top_words_single_section(data, f's{n}')[:10])
 
-# view top words in a section 10
-print("Top words in section 10:'\n'", top_words_by_section(sent_df_split, 's10')[:20])
+def main():
+    """Imports the commencement speeches, then breaks each speech into 10
+    sections for sentiment analysis. Performs vader sentiment analysis on each
+    section and then analyzes the results per gender.
+    """
+    model_output = pd.read_csv('topic_modeling_output.csv')
+    split_df = split_speeches(model_output)
+    sentiment_df = obtain_comp_score(split_df)
+    sentiment_by_gender(sentiment_df)
+    top_words_all_sections(sentiment_df)
 
-# IBM Watson Tone Analysis
-# IBM_API_KEY = os.environ['IBM_API_KEY']
-
-from ibm_connect import ibm_connnection()
-
-# connect to ibm with authentication key stored in separate .py file (ibm_comment)
-imb_connection()
-
-# re-pull dataset from MongoDB because IBM's Tone Analyzer leverages sentence structure and
-# periods were stripped away during cleaning
-
-ibm_df = pull_from_mongo()
-
-def clean_text_ibm(text):
-    """Remove text in square brackets and remove words containing numbers."""
-
-    text = re.sub('\[.*?\]', '', text)
-    text = re.sub('\w*\d\w*', '', text)
-    text = re.sub('[‘’“”…:"\"><]', '', text)
-    text = re.sub('\n', ' ', text)
-    return text
-
-ibm_round = lambda x: clean_text_for_ibm(x)
-ibm_df.speech = speeches.speech.apply(ibm_round)
-
-# repeat other data touch ups
-ibm_df = ibm_df.drop('_id', axis=1)
-
-spanish_speeker1, spanish_speeker2 = 'Henry A. Wallace', 'Billy Collins'
-ibm_df = ibm_df[ibm_df.name != spanish_speeker1]
-ibm_df = ibm_df[ibm_df.name != spanish_speeker2]
-
-ibm_df = ibm_df.drop_duplicates(keep='first')
-
-# add gender column back in
-m_f_designation = pickle.load( open( "m_f_designation.pkl", "rb" ) )
-gender = re.sub('\n', ' ', m_f_designation).split(' ')
-ibm_df["gender"] = gender
-
-# due to YouTube transcripts, many of the speeches do not include periods. To isolate those
-# that do, create a column that indicates the number of sentences per speech.
-ibm_df['sent_len'] = ibm_df.speech.apply(lambda x: len(sent_tokenize(x)))
-
-# select only those with a reasonable amount of sentences
-ibm_df_use = ibm_df[ibm_df.sent_len >= 50]
-
-# create separate dataframes for male and female to run through Watson as gender information
-# will otherwise be lost
-f_for_ibm = ibm_df_use[ibm_df_use.gender =='1']
-m_for_ibm = ibm_df_use[ibm_df_use.gender =='0']
-
-# run watson for female speeches and store in result list
-resp_f_ls = []
-
-for s in f_for_ibm.speech:
-    resp = tone_analyzer.tone(
-        {'text': s},
-        content_type='application/json',
-        sentences=False
-    )
-
-    resp_f_ls.append(resp.result)
-
-# run watson for male speeches and store in result list
-resp_m_ls = []
-
-for s in m_for_ibm.speech:
-    resp = tone_analyzer.tone(
-        {'text': s},
-        content_type='application/json',
-        sentences=False
-    )
-
-    resp_m_ls.append(resp.result)
-
-# Watson output is a dictionary of dictionaries. Access information on tone and store
-# as a new dataframe for easier accessing
-
-# create female df & and add gender indicator column
-start_f_df = pd.DataFrame.from_dict(resp_f_ls[0]['document_tone']['tones'])
-for i in range(1, len(resp_f_ls)):
-    start_f_df = pd.concat((start_f_df, pd.DataFrame.from_dict(resp_f_ls[i]['document_tone']['tones'])), axis=0)
-
-start_f_df['gender'] = '1'
-
-# create male df and add gender indicator column
-start_m_df = pd.DataFrame.from_dict(resp_m_ls[0]['document_tone']['tones'])
-for i in range(len(resp_m_ls)):
-    start_m_df = pd.concat((start_m_df, pd.DataFrame.from_dict(resp_m_ls[i]['document_tone']['tones'])), axis=0)
-
-start_m_df['gender'] = '0'
-
-# concatenate the male and female dataframes and export to csv for Tableau visualization
-full_sent_df = pd.concat((start_f_df, start_m_df), axis=0)
-
-full_sent_df.to_csv('full_sent_df.csv')
+main()
